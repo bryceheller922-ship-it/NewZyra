@@ -12,7 +12,15 @@ const http = require('http');
 
 const PORT = process.env.PORT || 3001;
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://newzyra.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 
 const server = http.createServer(app);
@@ -70,6 +78,19 @@ wss.on('connection', (ws) => {
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, browser: !!browser, page: !!page });
+});
+
+app.get('/page-info', async (req, res) => {
+  try {
+    if (!page) {
+      return res.json({ ok: false, error: 'No active page' });
+    }
+    const title = await page.title();
+    const url = page.url();
+    res.json({ ok: true, title, url });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 
 app.post('/navigate', async (req, res) => {

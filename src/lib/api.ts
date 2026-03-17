@@ -9,7 +9,7 @@
 
 // ─── CONFIGURATION ──────────────────────────
 // TODO: Replace with your deployed agent server URL
-const AGENT_SERVER_URL = import.meta.env.VITE_AGENT_SERVER_URL || 'http://localhost:3001';
+const AGENT_SERVER_URL = 'https://newzyra-1.onrender.com';
 
 // TODO: Replace with your WebSocket endpoint for live browser streaming
 const AGENT_WS_URL = AGENT_SERVER_URL.replace(/^http/, 'ws') + '/live';

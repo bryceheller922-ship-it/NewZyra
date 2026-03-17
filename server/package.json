@@ -1,11 +1,11 @@
 {
   "name": "studyagent-server",
   "version": "1.0.0",
-  "description": "StudyAgent Playwright Backend Server - Run this on your machine to enable full browser automation",
+  "description": "StudyAgent Playwright Backend Server",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "install-browser": "npx playwright install chromium"
+    "postinstall": "npx playwright install chromium --with-deps"
   },
   "dependencies": {
     "playwright": "^1.40.0",

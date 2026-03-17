@@ -288,139 +288,155 @@ export default function App() {
     }
   }, [addLog]);
 
-  const runAgent = useCallback(async (task: string) => {
-    if (agentRunning || !task.trim()) return;
+// ═══════════════════════════════════════════
+//  PASTE THIS to replace the runAgent function in App.tsx
+//  Also update the import at the top to include:
+//  aiGenerateActionPlan, executeAgentPlan, AgentAction
+// ═══════════════════════════════════════════
 
-    setAgentRunning(true);
-    setAgentSteps([]);
-    setAgentLogs([]);
-    setAgentScreenshot(null);
-    setAgentProgress(0);
-    setAgentResult(null);
-    setAgentQuestion(null);
-    setShowSkillRunner(true);
-    setPage('skills');
-    setActiveTab('preview');
-    setMobileMenuOpen(false);
+// UPDATE YOUR IMPORT LINE AT TOP OF App.tsx to:
+/*
+import {
+  aiAnalyze,
+  runAgentTask, connectLiveStream, getScreenshot,
+  aiGenerateActionPlan, executeAgentPlan,
+  AGENT_SERVER_URL,
+} from './lib/api';
+*/
 
-    addLog(`Starting task: ${task}`, 'info');
-    addLog('Generating execution plan with AI...', 'info');
+// REPLACE the runAgent function with this:
+const runAgent = useCallback(async (task: string) => {
+  if (agentRunning || !task.trim()) return;
 
-    // Try connecting to live stream
-    connectWs();
+  setAgentRunning(true);
+  setAgentSteps([]);
+  setAgentLogs([]);
+  setAgentScreenshot(null);
+  setAgentProgress(0);
+  setAgentResult(null);
+  setAgentQuestion(null);
+  setShowSkillRunner(true);
+  setPage('skills');
+  setActiveTab('preview');
+  setMobileMenuOpen(false);
 
-    // Generate plan via AI
-    let steps: string[];
+  addLog(`Starting task: ${task}`, 'info');
+  addLog('Connecting to agent server...', 'info');
+
+  // Connect WebSocket for live frames
+  connectWs();
+
+  // Check if server is reachable
+  let serverOnline = false;
+  try {
+    const health = await fetch(`${AGENT_SERVER_URL}/health`, { signal: AbortSignal.timeout(5000) });
+    const data = await health.json();
+    serverOnline = data.ok;
+    if (data.browser) {
+      addLog('✓ Server online — browser ready', 'success');
+    } else {
+      addLog('✓ Server online — launching browser...', 'info');
+    }
+  } catch {
+    addLog('⚠ Agent server offline — running in AI-only mode', 'error');
+  }
+
+  // Generate real action plan via AI
+  addLog('Generating action plan with AI...', 'info');
+  let actions;
+  try {
+    actions = await aiGenerateActionPlan(task);
+    addLog(`Plan ready: ${actions.length} actions`, 'success');
+  } catch {
+    addLog('Using fallback plan', 'info');
+    actions = [
+      { type: 'navigate' as const, description: 'Open browser', url: 'https://www.google.com' },
+      { type: 'screenshot' as const, description: 'Capture page' },
+      { type: 'analyze' as const, description: 'Analyze result', instruction: task },
+    ];
+  }
+
+  // Initialize step list from actions
+  const stepList: AgentStep[] = actions.map((a, i) => ({
+    id: i,
+    text: a.description,
+    status: 'pending' as const,
+  }));
+  setAgentSteps(stepList);
+
+  // Execute the plan — real browser actions if server is online
+  let finalResult = '';
+  try {
+    if (serverOnline) {
+      finalResult = await executeAgentPlan(actions, {
+        onStepStart: (index) => {
+          setAgentSteps(prev => prev.map(s =>
+            s.id === index ? { ...s, status: 'running' } : s
+          ));
+        },
+        onStepDone: (index, result) => {
+          setAgentSteps(prev => prev.map(s =>
+            s.id === index ? { ...s, status: 'done', result } : s
+          ));
+        },
+        onStepError: (index, error) => {
+          setAgentSteps(prev => prev.map(s =>
+            s.id === index ? { ...s, status: 'error', result: error } : s
+          ));
+          addLog(`Step ${index + 1} error: ${error}`, 'error');
+        },
+        onScreenshot: (dataUrl) => {
+          setAgentScreenshot(dataUrl);
+        },
+        onLog: (message, type = 'info') => {
+          addLog(message, type);
+        },
+        onProgress: (pct) => {
+          setAgentProgress(pct);
+        },
+      });
+    } else {
+      // AI-only fallback — no real browser
+      for (let i = 0; i < stepList.length; i++) {
+        setAgentSteps(prev => prev.map(s =>
+          s.id === i ? { ...s, status: 'running' } : s
+        ));
+        addLog(`[AI mode] ${stepList[i].text}`, 'action');
+        await new Promise(r => setTimeout(r, 1200));
+        setAgentSteps(prev => prev.map(s =>
+          s.id === i ? { ...s, status: 'done', result: 'Simulated (server offline)' } : s
+        ));
+        setAgentProgress(Math.round(((i + 1) / stepList.length) * 100));
+      }
+      finalResult = `Task completed in AI-only mode (browser server offline). To see real browser automation, ensure the Playwright server is running at ${AGENT_SERVER_URL}.`;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    addLog(`Agent error: ${msg}`, 'error');
+    finalResult = `Agent encountered an error: ${msg}`;
+  }
+
+  setAgentResult(finalResult);
+  addLog('✓ Task complete', 'success');
+
+  // Save to Firebase
+  if (user) {
     try {
-      steps = await aiGeneratePlan(task);
-      addLog(`Plan generated: ${steps.length} steps`, 'success');
-    } catch {
-      steps = ['Analyze the task', 'Open browser and navigate', 'Extract information', 'Compile results', 'Save to database'];
-      addLog('Using fallback plan', 'info');
-    }
+      await addDocument(`users/${user.uid}/tasks`, {
+        task,
+        result: finalResult.slice(0, 500),
+        timestamp: new Date().toISOString(),
+      });
+    } catch { /* ignore */ }
+  }
 
-    const agentStepList: AgentStep[] = steps.map((s, i) => ({
-      id: i, text: s, status: 'pending' as const,
-    }));
-    setAgentSteps(agentStepList);
+  setTaskHistory(prev => [
+    { id: Date.now().toString(), task, status: 'completed', time: new Date().toLocaleTimeString() },
+    ...prev,
+  ]);
 
-    // Try to tell the backend to run the task
-    let taskId: string | null = null;
-    try {
-      taskId = await runAgentTask(task, user?.uid || 'anon');
-      if (taskId && !taskId.startsWith('demo_')) {
-        addLog(`Backend task started: ${taskId}`, 'success');
-      }
-    } catch {
-      addLog('Running in local mode (no backend server)', 'info');
-    }
-
-    // Execute each step
-    for (let i = 0; i < agentStepList.length; i++) {
-      const step = agentStepList[i];
-      const pct = Math.round(((i + 1) / agentStepList.length) * 100);
-
-      // Update step status to running
-      setAgentSteps((prev) => prev.map((s) => s.id === step.id ? { ...s, status: 'running' } : s));
-      addLog(`Step ${i + 1}: ${step.text}`, 'action');
-
-      // Try to get screenshot from backend
-      try {
-        const ss = await getScreenshot();
-        if (ss) setAgentScreenshot(ss);
-      } catch {
-        // No backend — no screenshot
-      }
-
-      // Check if step needs credentials
-      const lowerStep = step.text.toLowerCase();
-      if (lowerStep.includes('login') || lowerStep.includes('credential') || lowerStep.includes('sign in') || lowerStep.includes('password')) {
-        const answer = await askUser(
-          'This step requires login credentials. What are your credentials for this service?',
-          `Step: ${step.text}\n\nFormat: username / password\nOr type "skip" to skip this step.`
-        );
-        if (answer.toLowerCase() !== 'skip') {
-          addLog('Credentials received, proceeding with login...', 'info');
-        } else {
-          addLog('Skipping login step', 'info');
-        }
-      }
-
-      // Simulate step execution with AI analysis
-      await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
-
-      // Try AI analysis for extraction steps
-      if (lowerStep.includes('extract') || lowerStep.includes('summarize') || lowerStep.includes('analyze') || lowerStep.includes('compile')) {
-        try {
-          const analysis = await aiAnalyze(
-            `Task: ${task}\nCurrent step: ${step.text}\nStep number: ${i + 1} of ${agentStepList.length}`,
-            'Generate a brief realistic result for this step of the study agent task. Be specific and helpful. Keep it under 100 words.'
-          );
-          addLog(`Result: ${analysis.slice(0, 150)}`, 'success');
-          setAgentSteps((prev) => prev.map((s) => s.id === step.id ? { ...s, status: 'done', result: analysis } : s));
-        } catch {
-          setAgentSteps((prev) => prev.map((s) => s.id === step.id ? { ...s, status: 'done', result: 'Step completed' } : s));
-        }
-      } else {
-        setAgentSteps((prev) => prev.map((s) => s.id === step.id ? { ...s, status: 'done', result: 'Completed' } : s));
-      }
-
-      setAgentProgress(pct);
-      addLog(`Step ${i + 1} completed ✓`, 'success');
-    }
-
-    // Final result
-    try {
-      const finalResult = await aiAnalyze(
-        `Task: ${task}\nSteps completed: ${steps.join(', ')}`,
-        'Generate a comprehensive final summary of what was accomplished in this agent task. Include specific data points, findings, or results. Be detailed but concise.'
-      );
-      setAgentResult(finalResult);
-      addLog('Task completed successfully!', 'success');
-    } catch {
-      setAgentResult('Task completed. All steps executed successfully.');
-      addLog('Task completed.', 'success');
-    }
-
-    // Save to Firebase
-    if (user) {
-      try {
-        await addDocument(`users/${user.uid}/tasks`, {
-          task,
-          steps: steps,
-          result: 'completed',
-          timestamp: new Date().toISOString(),
-        });
-      } catch { /* ignore */ }
-    }
-
-    setTaskHistory((prev) => [
-      { id: Date.now().toString(), task, status: 'completed', time: new Date().toLocaleTimeString() },
-      ...prev,
-    ]);
-
-    setAgentRunning(false);
-  }, [agentRunning, user, addLog, askUser, connectWs]);
+  setAgentRunning(false);
+}, [agentRunning, user, addLog, connectWs]);
 
   // ═══════════════════════════════════════════
   //  NOTES HANDLERS

@@ -4,7 +4,7 @@
  * ========================================
  */
 
-const AGENT_SERVER_URL = import.meta.env.VITE_AGENT_SERVER_URL || 'https://newzyra-1.onrender.com';
+const AGENT_SERVER_URL = import.meta.env.VITE_AGENT_SERVER_URL || 'newzyra.railway.internal';
 const AGENT_WS_URL = AGENT_SERVER_URL.replace(/^https/, 'wss').replace(/^http/, 'ws') + '/live';
 
 const AI_KEYS = {

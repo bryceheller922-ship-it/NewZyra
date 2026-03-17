@@ -4,8 +4,9 @@ import {
   addDocument, getCollection, updateDocument, deleteDocument,
 } from './lib/firebase';
 import {
-  aiGeneratePlan, aiAnalyze,
+    aiAnalyze,
   runAgentTask, connectLiveStream, getScreenshot,
+  aiGenerateActionPlan, executeAgentPlan,
   AGENT_SERVER_URL,
 } from './lib/api';
 

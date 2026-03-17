@@ -40,6 +40,15 @@ async function initBrowser() {
   if (browser) return;
   console.log('[Browser] Launching Chromium...');
   browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--single-process'
+  ]
+})
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
